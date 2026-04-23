@@ -3,11 +3,10 @@
     "description": "Haykal API layer: ApiResponse, Scramble extensions, the /me endpoint, and conventions for Controllers / Requests / Resources.",
     "type": "library",
     "license": "proprietary",
-    "version": "1.0.0-dev",
     "require": {
         "php": "^8.3",
         "dedoc/scramble": "^0.13.20",
-        "hitaqnia/haykal-core": "@dev",
+        "hitaqnia/haykal-core": "^1.0",
         "illuminate/contracts": "^13.0",
         "illuminate/http": "^13.0",
         "illuminate/routing": "^13.0",
@@ -26,6 +25,6 @@
             ]
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }
