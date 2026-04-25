@@ -19,10 +19,15 @@ use Throwable;
  * Package service provider for haykal-api.
  *
  * Contributes two globally-applicable Scramble exception-to-response
- * extensions (validation / 404) that render the Haykal envelope, and
- * publishes the Identity routes stub. Per-API document configuration
- * (security schemes, titles, docs UI) lives in ApiProvider subclasses
- * registered by the consuming application.
+ * extensions (validation / 404) that render the Haykal envelope, installs
+ * the module-based tag resolver, and registers the ApiExceptionHandler
+ * render callback so every `api/*` request uses the envelope shape on
+ * framework failures. Per-API document configuration (security schemes,
+ * titles, docs UI) lives in `ApiProvider` subclasses registered by the
+ * consuming application.
+ *
+ * haykal-api is a support layer — it does not ship endpoints, route files,
+ * or concrete API providers. Consuming apps define their own modules.
  */
 final class HaykalApiServiceProvider extends ServiceProvider
 {
@@ -38,10 +43,6 @@ final class HaykalApiServiceProvider extends ServiceProvider
         Scramble::resolveTagsUsing(new ModuleTagResolver);
 
         $this->registerExceptionRenderer();
-
-        $this->publishes([
-            __DIR__.'/../routes/identity-api.stub.php' => base_path('routes/api/identity-api.php'),
-        ], 'haykal-api-routes');
     }
 
     /**

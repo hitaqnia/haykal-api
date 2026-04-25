@@ -1,15 +1,16 @@
 # hitaqnia/haykal-api
 
-API scaffolding for HiTaqnia Laravel applications.
+API support layer for HiTaqnia Laravel applications.
 
-`haykal-api` provides four things:
+`haykal-api` is a **utility package**. It gives every HiTaqnia API project the same response shape, the same error translation, and the same Scramble plumbing — and stops there. It does **not** ship any endpoints, controllers, route files, or concrete API providers. Those are owned by the consuming application.
 
-1. **A response envelope** — the `ApiResponse` factory and `ApiExceptionHandler` so every endpoint in the application returns a consistent JSON shape.
-2. **Scramble integrations** — exception-to-response extensions that document the envelope in the generated OpenAPI spec.
-3. **A provider-based API composition pattern** — an abstract `ApiProvider` that subclasses per API module to register it with Scramble, declare its security schemes, and expose its docs UI. Applications compose as many APIs as they need by defining one provider per module.
-4. **The Identity API** — `GET /api/identity/me` for retrieving the authenticated Huwiya user, along with a ready-to-register `IdentityApiProvider`.
+Three things:
 
-Controllers, Form Requests, and Resources are written per-project following the conventions documented below; Laravel already supplies the right primitives and `haykal-api` deliberately does not ship base classes for them.
+1. **A response envelope.** `ApiResponse` factories and `ApiExceptionHandler` so every endpoint returns a consistent JSON shape, on success and on failure.
+2. **Scramble integrations.** Exception-to-response extensions plus a module tag resolver so the generated OpenAPI spec matches the envelope and groups endpoints by application module automatically.
+3. **A provider-based API composition pattern.** An abstract `ApiProvider` you subclass per API module to register it with Scramble, declare its security schemes, and expose its docs UI. Applications compose as many providers as they need.
+
+Controllers, Form Requests, and Resources are written per-project. Laravel already supplies the right primitives; `haykal-api` does not ship base classes for them.
 
 ---
 
@@ -18,14 +19,24 @@ Controllers, Form Requests, and Resources are written per-project following the 
 - [Requirements](#requirements)
 - [What this package provides](#what-this-package-provides)
 - [Installation](#installation)
-- [Configuration](#configuration)
 - [Defining APIs](#defining-apis)
     - [Anatomy of an API provider](#anatomy-of-an-api-provider)
+    - [What the provider wires up](#what-the-provider-wires-up)
+    - [Route files](#route-files)
     - [Versioning](#versioning)
     - [Automatic tag resolution](#automatic-tag-resolution)
 - [Usage](#usage)
+    - [Success responses](#success-responses)
+    - [Paginated responses](#paginated-responses)
+    - [Error responses](#error-responses)
+    - [Business errors](#business-errors)
+    - [Locale from request header](#locale-from-request-header)
 - [Conventions](#conventions)
     - [Controller docblocks](#controller-docblocks)
+    - [Controllers](#controllers)
+    - [Form Requests](#form-requests)
+    - [Resources](#resources)
+    - [Module layout](#module-layout)
 - [Customization](#customization)
 - [Testing](#testing)
 
@@ -35,8 +46,8 @@ Controllers, Form Requests, and Resources are written per-project following the 
 
 - PHP 8.3 or later
 - Laravel 13 or later
-- `hitaqnia/haykal-core` (shared kernel)
-- A running instance of the Huwiya Identity Provider
+- `hitaqnia/haykal-core` (shared kernel — pulled transitively)
+- `dedoc/scramble` (pulled transitively)
 
 ---
 
@@ -64,95 +75,33 @@ Controllers, Form Requests, and Resources are written per-project following the 
 
 | Class | Purpose |
 |---|---|
-| `HiTaqnia\Haykal\Api\ApiProvider` | Abstract base service provider for API modules. Registers the module with Scramble, installs the Huwiya bearer security scheme, and exposes the docs UI. |
-| `HiTaqnia\Haykal\Api\Identity\IdentityApiProvider` | Concrete provider for the Identity API shipped by this package. Applications register it to enable the `GET /api/identity/me` endpoint and its Scramble docs. |
+| `HiTaqnia\Haykal\Api\ApiProvider` | Abstract base service provider for API modules. Registers the module with Scramble, installs the Huwiya bearer security scheme, and exposes the docs UI. Subclass this for every API you ship. |
 
-### Identity
+### Middleware
 
 | Class | Purpose |
 |---|---|
-| `HiTaqnia\Haykal\Api\Identity\Controllers\MeController` | Single-action controller that returns the authenticated Huwiya user. |
-| `HiTaqnia\Haykal\Api\Identity\Resources\UserResource` | JSON representation of the user (id, name, phone, email, locale, zoneinfo, theme). |
+| `HiTaqnia\Haykal\Api\Http\Middlewares\SetLocaleFromHeaderMiddleware` | Sets `app()->setLocale()` from an inbound request header (`Accept-Language` by default). Not registered globally — slot it into the route groups that should respect the header. |
 
-### Routes
-
-| File | Mount point |
-|---|---|
-| `routes/identity-api.stub.php` | Published to `routes/api/identity-api.php`. Registers `GET /api/identity/me` behind the `huwiya-api` guard. |
+No concrete providers, controllers, resources, or routes are shipped. Those belong in the consuming application.
 
 ---
 
 ## Installation
 
-Install alongside `haykal-core`. Once path repositories are declared for both packages (see `haykal-core`'s README), run:
+`haykal-api` is pulled in transitively by the `hitaqnia/haykal` metapackage. To consume it directly:
 
 ```bash
-composer require hitaqnia/haykal-api:@dev
+composer require hitaqnia/haykal-api
 ```
 
----
+Auto-discovered via `HaykalApiServiceProvider`, which:
 
-## Configuration
+- Registers `ValidationExceptionExtension` and `NotFoundExceptionExtension` with Scramble.
+- Installs `ModuleTagResolver` as the default tag resolver.
+- Registers `ApiExceptionHandler::handle` as a `renderable` callback on Laravel's exception handler so every `api/*` route surfaces validation, 404, auth, and throttle failures through the Haykal envelope. Non-API requests fall through to Laravel's defaults.
 
-### 1. Publish the routes stub
-
-```bash
-php artisan vendor:publish --tag=haykal-api-routes
-```
-
-This copies `routes/api/identity-api.php` into the application. Include it from `routes/api.php`:
-
-```php
-require __DIR__.'/api/identity-api.php';
-```
-
-### 2. Register the Identity API provider
-
-Register `IdentityApiProvider` in `bootstrap/providers.php`:
-
-```php
-return [
-    App\Providers\AppServiceProvider::class,
-
-    // Haykal API modules
-    HiTaqnia\Haykal\Api\Identity\IdentityApiProvider::class,
-
-    // ... other application providers and API providers ...
-];
-```
-
-This registers the Identity API with Scramble, installs the Huwiya bearer security scheme, and exposes the docs UI at `/docs/identity-api` with the JSON spec at `/docs/identity-api.json`.
-
-See [Defining APIs](#defining-apis) below for the full pattern used to add additional API modules.
-
-### 3. Register the `huwiya-api` guard
-
-In `config/auth.php`:
-
-```php
-'guards' => [
-    // ... existing guards ...
-
-    'huwiya-api' => [
-        'driver' => 'huwiya-api',
-        'provider' => 'users',
-    ],
-],
-```
-
-### 4. Exception handler (automatic)
-
-`HaykalApiServiceProvider` registers `ApiExceptionHandler` as a `renderable` callback on Laravel's exception handler on boot. Every request matching `api/*` thereby surfaces validation failures, 404s, auth errors, and throttling through the Haykal envelope. Non-API requests fall through to Laravel's defaults — no action required.
-
-### 5. Confirm Scramble is configured
-
-Publish Scramble's configuration if you have not already:
-
-```bash
-php artisan vendor:publish --provider="Dedoc\Scramble\ScrambleServiceProvider" --tag=scramble-config
-```
-
-No further action is required — `HaykalApiServiceProvider` registers the validation and 404 exception extensions automatically. Security schemes and per-API metadata are declared by each `ApiProvider` subclass (see [Defining APIs](#defining-apis)).
+No configuration files to publish, no routes to include, no providers to register by default. Per-API metadata (security schemes, titles, docs UI) lives in `ApiProvider` subclasses you write in the application.
 
 ---
 
@@ -231,7 +180,6 @@ Register the provider in `bootstrap/providers.php`:
 return [
     App\Providers\AppServiceProvider::class,
 
-    HiTaqnia\Haykal\Api\Identity\IdentityApiProvider::class,
     App\Providers\Apis\PropertiesApiProvider::class,
 ];
 ```
@@ -273,18 +221,6 @@ Route::prefix('properties')
 ```
 
 Scramble matches the `api_path` declared on the provider (`api/properties`) against the routes defined here and groups them under the `properties-api` spec.
-
-### The shipped Identity API
-
-`IdentityApiProvider` is a concrete `ApiProvider` shipped by this package. It exposes the Identity module at:
-
-| Path | Purpose |
-|---|---|
-| `api/identity/me` | Authenticated user profile. |
-| `docs/identity-api` | Scramble UI for the Identity module. |
-| `docs/identity-api.json` | Raw OpenAPI spec. |
-
-Subclass `IdentityApiProvider` (or write a new one extending `ApiProvider` directly) if the module needs a different URL prefix, title, or security scheme set.
 
 ### Versioning
 
@@ -399,6 +335,24 @@ return ApiResponse::businessError(
     Error::make(code: 4001, message: 'Booking overlaps an existing reservation.'),
 );
 ```
+
+### Locale from request header
+
+Apply `SetLocaleFromHeaderMiddleware` to the route groups that should honor the client's locale. Reads `Accept-Language` by default; pass an allow-list to reject unsupported values, or a custom header name when `Accept-Language` is reserved for content negotiation.
+
+```php
+use HiTaqnia\Haykal\Api\Http\Middlewares\SetLocaleFromHeaderMiddleware;
+
+// bootstrap/app.php
+$middleware->appendToGroup('api', [
+    new SetLocaleFromHeaderMiddleware(supported: ['en', 'ar']),
+]);
+
+// or a custom header:
+new SetLocaleFromHeaderMiddleware(supported: ['en', 'ar'], header: 'X-Locale');
+```
+
+The middleware is not registered globally and ships no alias — instantiate it where you need it.
 
 ---
 
@@ -544,16 +498,6 @@ routes/api/properties-api.php
 
 ## Customization
 
-### Publishable resources
-
-| Tag | Contents |
-|---|---|
-| `haykal-api-routes` | The `identity-api.stub.php` routes file. |
-
-### Middleware considerations
-
-The published routes file is guarded by `auth:huwiya-api`. Replace the middleware stack at the call site if the application wires authentication differently — the route file is just a stub once published.
-
 ### Scramble
 
 `HaykalApiServiceProvider` registers the shipped Scramble extensions. Applications add their own exception-to-response extensions by calling `Scramble::registerExtension(...)` in their own service provider's `boot()`.
@@ -566,7 +510,7 @@ Prefer composing new factories on `ApiResponse` rather than subclassing. Any fac
 
 ## Testing
 
-The package ships test helpers on `HiTaqnia\Haykal\Tests\Api\ApiTestCase` that feature tests inherit:
+The monorepo ships test helpers on `HiTaqnia\Haykal\Tests\Api\ApiTestCase` that feature tests inherit:
 
 | Helper | Purpose |
 |---|---|
@@ -577,23 +521,18 @@ The package ships test helpers on `HiTaqnia\Haykal\Tests\Api\ApiTestCase` that f
 Example:
 
 ```php
-public function test_authenticated_user_can_fetch_their_profile(): void
+public function test_create_property_returns_the_created_resource(): void
 {
-    $user = User::factory()->create(['locale' => 'ar']);
-
+    $user = User::factory()->create();
     $this->authenticateAs($user);
 
-    $response = $this->getJson('/api/identity/me');
+    $response = $this->postJson('/api/properties', [
+        'name' => 'Al-Mansour Tower',
+        'owner_phone' => '+9647701234567',
+    ]);
 
-    $this->assertApiSuccess($response);
-    $response->assertJsonPath('data.locale', 'ar');
-}
-
-public function test_unauthenticated_request_is_rejected(): void
-{
-    $response = $this->getJson('/api/identity/me');
-
-    $this->assertApiError($response, code: 401);
+    $this->assertApiSuccess($response, code: 201);
+    $response->assertJsonPath('data.name', 'Al-Mansour Tower');
 }
 ```
 
