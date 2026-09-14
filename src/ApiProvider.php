@@ -27,8 +27,8 @@ use LogicException;
  *
  * For each declared version the provider:
  *   1. Registers the API with Scramble under a derived identifier.
- *   2. Installs the Huwiya bearer security scheme as the default
- *      requirement and appends any extra schemes.
+ *   2. Installs the bearer security scheme as the default requirement
+ *      and appends any extra schemes.
  *   3. Exposes the docs UI and raw JSON spec routes.
  *
  * Route files are intentionally not managed here — they live under
@@ -137,8 +137,19 @@ abstract class ApiProvider extends ServiceProvider
     }
 
     /**
+     * Description shown for the default `bearer` security scheme.
+     *
+     * Override to point clients at the token endpoint this API issues from.
+     */
+    protected function bearerSchemeDescription(): string
+    {
+        return 'Access token issued by the identity API. Send it in the '.
+            '`Authorization` header as `Bearer <token>`.';
+    }
+
+    /**
      * Extra security schemes to register on this API in addition to the
-     * always-present Huwiya bearer scheme.
+     * always-present bearer scheme.
      *
      * Typical additions are tenant or profile header schemes. Override
      * and return an associative array keyed by scheme name:
@@ -174,11 +185,8 @@ abstract class ApiProvider extends ServiceProvider
             ],
             'ui' => $this->buildUiConfig(),
         ])->withDocumentTransformers(function (OpenApi $openApi): void {
-            $openApi->components->securitySchemes['bearer'] = SecurityScheme::http('bearer', 'JWT')
-                ->setDescription(
-                    'Huwiya-issued JWT bearer token. Obtain via the Huwiya OAuth2 authorization flow '.
-                    'and send in the `Authorization` header as `Bearer <token>`.',
-                );
+            $openApi->components->securitySchemes['bearer'] = SecurityScheme::http('bearer')
+                ->setDescription($this->bearerSchemeDescription());
 
             foreach ($this->additionalSecuritySchemes() as $schemeName => $scheme) {
                 $openApi->components->securitySchemes[$schemeName] = $scheme;

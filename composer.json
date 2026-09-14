@@ -1,16 +1,18 @@
 {
     "name": "hitaqnia/haykal-api",
-    "description": "Haykal API layer: ApiResponse, Scramble extensions, the /me endpoint, and conventions for Controllers / Requests / Resources.",
+    "description": "Haykal API layer: response envelope, Scramble extensions, and a phone + password + OTP authentication toolkit.",
     "type": "library",
     "license": "proprietary",
     "require": {
         "php": "^8.3",
         "dedoc/scramble": "^0.13.20",
-        "hitaqnia/haykal-core": "^1.0",
+        "hitaqnia/haykal-core": "^3.0",
         "illuminate/contracts": "^13.0",
         "illuminate/http": "^13.0",
         "illuminate/routing": "^13.0",
         "illuminate/support": "^13.0",
+        "laravel/sanctum": "^4.1",
+        "rstacode/otpiq": "^2.1",
         "spatie/laravel-query-builder": "^6.3"
     },
     "autoload": {

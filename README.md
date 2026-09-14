@@ -2,13 +2,14 @@
 
 API support layer for HiTaqnia Laravel applications.
 
-`haykal-api` is a **utility package**. It gives every HiTaqnia API project the same response shape, the same error translation, and the same Scramble plumbing — and stops there. It does **not** ship any endpoints, controllers, route files, or concrete API providers. Those are owned by the consuming application.
+`haykal-api` is a **utility package**. It gives every HiTaqnia API project the same response shape, the same error translation, the same Scramble plumbing, and the same phone + password + OTP authentication. It ships no route files and no concrete API providers — those are owned by the consuming application, which decides where the auth endpoints live.
 
-Three things:
+Four things:
 
 1. **A response envelope.** `ApiResponse` factories and `ApiExceptionHandler` so every endpoint returns a consistent JSON shape, on success and on failure.
 2. **Scramble integrations.** Exception-to-response extensions plus a module tag resolver so the generated OpenAPI spec matches the envelope and groups endpoints by application module automatically.
 3. **A provider-based API composition pattern.** An abstract `ApiProvider` you subclass per API module to register it with Scramble, declare its security schemes, and expose its docs UI. Applications compose as many providers as they need.
+4. **An authentication toolkit.** Sanctum tokens, one-time codes, and the controllers behind registration, login, refresh, sign-out, password change and password reset. See [Authentication](#authentication).
 
 Controllers, Form Requests, and Resources are written per-project. Laravel already supplies the right primitives; `haykal-api` does not ship base classes for them.
 
@@ -31,6 +32,12 @@ Controllers, Form Requests, and Resources are written per-project. Laravel alrea
     - [Error responses](#error-responses)
     - [Business errors](#business-errors)
     - [Locale from request header](#locale-from-request-header)
+- [Authentication](#authentication)
+    - [Setup](#setup)
+    - [Endpoints](#endpoints)
+    - [Token types](#token-types)
+    - [One-time codes](#one-time-codes)
+    - [Panel login](#panel-login)
 - [Conventions](#conventions)
     - [Controller docblocks](#controller-docblocks)
     - [Controllers](#controllers)
@@ -48,6 +55,7 @@ Controllers, Form Requests, and Resources are written per-project. Laravel alrea
 - Laravel 13 or later
 - `hitaqnia/haykal-core` (shared kernel — pulled transitively)
 - `dedoc/scramble` (pulled transitively)
+- `laravel/sanctum` and `rstacode/otpiq` (pulled transitively, for the auth toolkit)
 
 ---
 
@@ -75,15 +83,27 @@ Controllers, Form Requests, and Resources are written per-project. Laravel alrea
 
 | Class | Purpose |
 |---|---|
-| `HiTaqnia\Haykal\Api\ApiProvider` | Abstract base service provider for API modules. Registers the module with Scramble, installs the Huwiya bearer security scheme, and exposes the docs UI. Subclass this for every API you ship. |
+| `HiTaqnia\Haykal\Api\ApiProvider` | Abstract base service provider for API modules. Registers the module with Scramble, installs the `bearer` security scheme, and exposes the docs UI. Subclass this for every API you ship. |
+
+### Authentication
+
+| Class | Purpose |
+|---|---|
+| `HiTaqnia\Haykal\Api\Auth\AuthRoutes` | Registers the auth endpoints inside whatever prefix and middleware the application wraps them in. |
+| `HiTaqnia\Haykal\Api\Auth\Controllers\*` | `TokenController` (login / refresh / revoke), `OtpController`, `RegistrationController`, `PasswordController`, `AccountCheckController`. Subclass any of them to change behaviour. |
+| `HiTaqnia\Haykal\Api\Auth\Actions\*` | `IssueTokensAction`, `GenerateOtpAction`, `VerifyOtpAction`, `CreateUserWithPasswordAction` — the logic, usable without the controllers. |
+| `HiTaqnia\Haykal\Api\Auth\Models\Token` | Sanctum personal access token with a `device_id`. Registered with Sanctum automatically. |
+| `HiTaqnia\Haykal\Api\Auth\Contracts\OtpSender` | Delivery seam. Ships OTPIQ, log, and null drivers. |
+| `HiTaqnia\Haykal\Api\Auth\Http\Middlewares\EnsureSessionToken` | Aliased `haykal.session.token`. Keeps single-purpose OTP tokens off routes that expect a real session. |
 
 ### Middleware
 
 | Class | Purpose |
 |---|---|
 | `HiTaqnia\Haykal\Api\Http\Middlewares\SetLocaleFromHeaderMiddleware` | Sets `app()->setLocale()` from an inbound request header (`Accept-Language` by default). Not registered globally — slot it into the route groups that should respect the header. |
+| `HiTaqnia\Haykal\Api\Auth\Http\Middlewares\EnsureSessionToken` | See above. |
 
-No concrete providers, controllers, resources, or routes are shipped. Those belong in the consuming application.
+No concrete API providers and no route files are shipped. Those belong in the consuming application.
 
 ---
 
@@ -159,7 +179,7 @@ final class PropertiesApiProvider extends ApiProvider
     }
 
     /**
-     * Security schemes to register in addition to the Huwiya bearer scheme
+     * Security schemes to register in addition to the bearer scheme
      * (which is always installed). Typical additions are header-based
      * tenant or profile selectors.
      *
@@ -194,7 +214,7 @@ Registering the provider gives the application, automatically:
 | The spec's `info.version` and `info.description` are populated. | `version()`, `description()` |
 | The Scramble docs UI is served at `docs/<name>` (default) with the JSON spec at `docs/<name>.json`. | `docsPath()` — override to move it. |
 | The docs UI is titled and optionally branded with a logo and primary color. | `title()`, `logo()`, `primaryColor()` |
-| The `bearer` security scheme for Huwiya JWTs is added to the spec as the default requirement for every operation. | Always applied. |
+| The `bearer` security scheme is added to the spec as the default requirement for every operation. Override `bearerSchemeDescription()` to reword it. | Always applied. |
 | Any additional schemes declared by the provider are merged into the spec. | `additionalSecuritySchemes()` |
 
 ### Route files
@@ -213,7 +233,7 @@ use App\Apis\Properties\Controllers\ListPropertiesController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('properties')
-    ->middleware(['auth:huwiya-api'])
+    ->middleware(['auth:sanctum', 'haykal.session.token'])
     ->group(function () {
         Route::get('/', ListPropertiesController::class);
         Route::post('/', CreatePropertyController::class);
@@ -355,6 +375,102 @@ new SetLocaleFromHeaderMiddleware(supported: ['en', 'ar'], header: 'X-Locale');
 The middleware is not registered globally and ships no alias — instantiate it where you need it.
 
 ---
+
+## Authentication
+
+Phone + password, with SMS one-time codes for signing up and for resetting a forgotten password. Everything lives under `HiTaqnia\Haykal\Api\Auth`.
+
+The package owns the logic; the application owns the routes, the user model, the devices table, and every screen.
+
+### Setup
+
+Publish the config and the tokens migration:
+
+```bash
+php artisan vendor:publish --tag=haykal-auth-config
+php artisan vendor:publish --tag=haykal-auth-migrations
+php artisan migrate
+```
+
+Add a `sanctum` guard in `config/auth.php`:
+
+```php
+'guards' => [
+    'api' => ['driver' => 'sanctum', 'provider' => 'users'],
+],
+```
+
+The user model needs `Laravel\Sanctum\HasApiTokens`, a unique `phone` column cast with `PhoneNumberCast`, and a nullable `password`. Point `haykal-auth.user_model` at it, or leave it null to follow the default auth provider.
+
+Mount the endpoints wherever they belong, inside whatever middleware the application already applies:
+
+```php
+// routes/api.php
+use HiTaqnia\Haykal\Api\Auth\AuthRoutes;
+
+Route::prefix('identity')
+    ->middleware([SetLocaleFromHeaderMiddleware::class])
+    ->group(fn () => AuthRoutes::register());
+```
+
+Finally, schedule the token reaper:
+
+```php
+Schedule::command('sanctum:prune-expired --hours=24')->daily();
+```
+
+### Endpoints
+
+| Method | Path | Auth | What it does |
+|---|---|---|---|
+| POST | `check` | — | Whether a phone can sign in with a password. An enumeration oracle by design — throttle it. |
+| POST | `otp/request` | — | Send a code for a purpose (`1` reset password, `2` register). |
+| POST | `otp/verify` | — | Burn the code. Reset returns a single-ability token; register returns a registration ticket. |
+| POST | `register` | — | Complete a signup with the ticket, a name and a password. Returns the token pair. |
+| POST | `token` | — | Sign in. Returns the token pair. |
+| POST | `password/reset` | OTP token | Set a new password and revoke every token. |
+| POST | `token/refresh` | refresh token | Rotate the pair for this device. |
+| POST | `token/revoke` | session token | Sign this device out. |
+| PUT | `password/update` | session token | Change the password, keeping this device signed in. |
+
+Every response uses the standard envelope; business failures (OTP expired, phone taken, …) come back as HTTP 409 with a code in the 1000-1099 band.
+
+### Token types
+
+Three kinds of token share one `tokens` table and are told apart by **`name`**, never by abilities — an access token carries `*`, which satisfies every `can()` check on its own.
+
+| Type | Abilities | Bound to a device | Used for |
+|---|---|---|---|
+| access | `*` | yes | Every ordinary request. |
+| refresh | `refresh` | yes | Rotating the pair. |
+| otp | `reset-password` | no | One password reset, nothing else. |
+
+`haykal.session.token` (the `EnsureSessionToken` middleware) is what keeps an OTP token out of the rest of the API — it is issued on proof of phone possession alone, without the password, so anything beyond the reset endpoint must refuse it.
+
+Tokens are stamped with the caller's device id, read from `X-Device-Id` (configurable). That is what makes "sign out this device" and per-device refresh work. The application owns the devices table; this package only stamps and compares the id.
+
+Refreshing does not delete the old pair, it shortens it to `now() + rotation_grace` (60s by default), so requests already in flight — and a duplicate parallel refresh from a flaky connection — do not suddenly 401.
+
+### One-time codes
+
+Codes live in the cache, keyed by phone and purpose, and are single use. They are stored before delivery and dropped again if delivery throws, so a user is never holding a code the store does not know about.
+
+Throttling is per phone and purpose: three requests an hour, five verify attempts, with an expired code costing more than a wrong digit.
+
+Delivery goes through the `OtpSender` contract. `haykal-auth.otp.sender` picks `otpiq`, `log`, `null`, or any class you name; bind `OtpSender` yourself for anything else. `OTP_FAKE=true` makes every code `111111`, skips delivery and lifts the throttles — local development only.
+
+### Panel login
+
+Session login for Filament panels is the application's own page. `haykal-core` contributes just the credential mapping:
+
+```php
+use HiTaqnia\Haykal\Core\Identity\PhoneOrEmailCredentials;
+
+protected function getCredentialsFromFormData(array $data): array
+{
+    return PhoneOrEmailCredentials::resolve($data['identity'], $data['password']) ?? [];
+}
+```
 
 ## Conventions
 
@@ -514,7 +630,7 @@ The monorepo ships test helpers on `HiTaqnia\Haykal\Tests\Api\ApiTestCase` that 
 
 | Helper | Purpose |
 |---|---|
-| `authenticateAs(User $user, string $guard = 'huwiya-api'): User` | Authenticate the given user against a Huwiya-driven guard for the remainder of the test. Wraps `Huwiya::actingAs()`. |
+| `withBearer(string $token, array $headers = []): static` | Send the remaining requests with this bearer token. Forgets the resolved guards first, so one test can act as more than one token. |
 | `assertApiSuccess(TestResponse $response, int $code = 200): void` | Assert the response carries the Haykal success envelope: correct HTTP status, `success = 1`, `code = <code>`, `errors = null`, and the five canonical keys. |
 | `assertApiError(TestResponse $response, int $code, ?int $expectedHttpStatus = null): void` | Assert the response carries the Haykal error envelope. Pass `expectedHttpStatus` for business errors (codes > 999) that map to HTTP 409. |
 
@@ -524,9 +640,8 @@ Example:
 public function test_create_property_returns_the_created_resource(): void
 {
     $user = User::factory()->create();
-    $this->authenticateAs($user);
 
-    $response = $this->postJson('/api/properties', [
+    $response = $this->withBearer($token)->postJson('/api/properties', [
         'name' => 'Al-Mansour Tower',
         'owner_phone' => '+9647701234567',
     ]);
@@ -536,7 +651,7 @@ public function test_create_property_returns_the_created_resource(): void
 }
 ```
 
-For tests that exercise the full token round-trip, the monorepo's `FakeHuwiyaIdP` fixture (under `tests/Fixtures/`) issues RS256-signed JWTs that the real Huwiya SDK accepts.
+`tests/Api/Auth/AuthTestCase` mounts the auth endpoints the way an application would and exposes `login()` and `issuedOtp()` so a test can walk a full flow without sending SMS.
 
 Run the monorepo suite from the repository root:
 
