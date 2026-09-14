@@ -32,6 +32,13 @@ final class OtpController
 {
     use ResolvesAuthUser;
 
+    /**
+     * Request a code
+     *
+     * Sends a one-time code to the phone number for the given purpose. Codes
+     * are throttled per number and purpose, and requesting again replaces the
+     * pending one.
+     */
     public function request(RequestOtpRequest $request, GenerateOtpAction $generate): JsonResponse
     {
         $phone = $this->normalizePhone($request->string('phone')->toString());
@@ -71,6 +78,12 @@ final class OtpController
         );
     }
 
+    /**
+     * Verify a code
+     *
+     * Burns the code and returns proof of it: a single-purpose token for a
+     * password reset, or a registration ticket to finish signing up with.
+     */
     public function verify(VerifyOtpRequest $request, VerifyOtpAction $verify, IssueTokensAction $tokens): JsonResponse
     {
         $phone = $this->normalizePhone($request->string('phone')->toString());

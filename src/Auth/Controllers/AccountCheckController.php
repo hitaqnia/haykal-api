@@ -20,6 +20,12 @@ final class AccountCheckController
 {
     use ResolvesAuthUser;
 
+    /**
+     * Check account
+     *
+     * Whether this phone number has an account that can be signed in to. Lets
+     * a client show the sign-in or the sign-up screen without guessing.
+     */
     public function __invoke(CheckAccountRequest $request): JsonResponse
     {
         $user = $this->findUserByPhone($request->string('phone')->toString());

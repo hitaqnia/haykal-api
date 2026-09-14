@@ -22,7 +22,10 @@ final class PasswordController
     use InteractsWithDeviceTokens;
 
     /**
-     * Change the password of a signed-in user.
+     * Change password
+     *
+     * Replaces the password of a signed-in account, given the current one.
+     * Every other device is signed out; this one stays in.
      */
     public function update(UpdatePasswordRequest $request): JsonResponse
     {
@@ -47,7 +50,10 @@ final class PasswordController
     }
 
     /**
-     * Set a new password with the token minted by verifying a reset OTP.
+     * Reset password
+     *
+     * Sets a new password using the token from verifying a reset code, for
+     * someone who cannot supply the current one. Revokes every token.
      */
     public function reset(ResetPasswordRequest $request): JsonResponse
     {

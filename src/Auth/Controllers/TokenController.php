@@ -31,7 +31,10 @@ final class TokenController
     use ResolvesAuthUser;
 
     /**
-     * Log in with a phone number and password.
+     * Sign in
+     *
+     * Exchanges a phone number and password for an access and refresh token
+     * pair, bound to the calling device.
      */
     public function create(LoginRequest $request, IssueTokensAction $tokens): JsonResponse
     {
@@ -68,7 +71,10 @@ final class TokenController
     }
 
     /**
-     * Trade a refresh token for a fresh pair.
+     * Refresh a session
+     *
+     * Trades a refresh token for a fresh pair on the same device. The old pair
+     * stays valid briefly so requests already in flight do not fail.
      */
     public function refresh(Request $request, IssueTokensAction $tokens): JsonResponse
     {
@@ -106,7 +112,9 @@ final class TokenController
     }
 
     /**
-     * Sign this device out. Other devices keep their tokens.
+     * Sign out
+     *
+     * Revokes this device's tokens. Other devices stay signed in.
      */
     public function revoke(Request $request): JsonResponse
     {

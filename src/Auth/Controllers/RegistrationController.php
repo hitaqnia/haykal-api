@@ -27,6 +27,12 @@ final class RegistrationController
     use InteractsWithDeviceTokens;
     use ResolvesAuthUser;
 
+    /**
+     * Register
+     *
+     * Creates the account from a phone number already proved by a
+     * registration ticket, and signs it in.
+     */
     public function __invoke(
         RegisterRequest $request,
         CreateUserWithPasswordAction $createUser,
