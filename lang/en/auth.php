@@ -11,6 +11,7 @@ return [
     'token_refreshed' => 'Session refreshed.',
     'invalid_token' => 'This token cannot be used here.',
     'invalid_refresh_token' => 'Invalid refresh token.',
+    'device_required' => 'A device identifier is required to sign in.',
     'invalid_device' => 'Unknown device.',
     'invalid_reset_token' => 'Invalid password reset token.',
     'otp_sent' => 'Verification code sent.',

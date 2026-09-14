@@ -11,6 +11,7 @@ return [
     'token_refreshed' => 'تم تجديد الجلسة.',
     'invalid_token' => 'لا يمكن استخدام هذا الرمز هنا.',
     'invalid_refresh_token' => 'رمز التجديد غير صالح.',
+    'device_required' => 'مطلوب معرّف الجهاز لتسجيل الدخول.',
     'invalid_device' => 'جهاز غير معروف.',
     'invalid_reset_token' => 'رمز إعادة تعيين كلمة المرور غير صالح.',
     'otp_sent' => 'تم إرسال رمز التحقق.',

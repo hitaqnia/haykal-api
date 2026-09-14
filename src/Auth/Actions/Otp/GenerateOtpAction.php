@@ -51,7 +51,7 @@ final class GenerateOtpAction
 
     private function generateCode(): string
     {
-        if (config('haykal-auth.otp.fake')) {
+        if (FakeOtp::enabled()) {
             return str_repeat('1', (int) config('haykal-auth.otp.length', 6));
         }
 

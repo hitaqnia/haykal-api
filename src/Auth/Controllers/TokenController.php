@@ -20,7 +20,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 
 /**
  * Issuing, rotating and revoking the access/refresh pair.
@@ -39,7 +38,11 @@ final class TokenController
     public function create(LoginRequest $request, IssueTokensAction $tokens): JsonResponse
     {
         $phone = $request->string('phone')->toString();
-        $key = Str::transliterate(Str::lower($phone).'|'.$request->ip());
+
+        // Key on the canonical number. `07701234567`, `+9647701234567` and
+        // `7701234567` all resolve to the same account, so keying on the raw
+        // input would hand an attacker a fresh allowance per spelling.
+        $key = 'haykal-auth:login:'.$this->normalizePhone($phone).'|'.$request->ip();
         $max = (int) config('haykal-auth.login.max_attempts', 5);
 
         if (RateLimiter::tooManyAttempts($key, $max)) {
@@ -48,6 +51,15 @@ final class TokenController
             return ApiResponse::tooManyRequests(
                 __('haykal-api::auth.too_many_attempts', ['seconds' => RateLimiter::availableIn($key)])
             );
+        }
+
+        // A session pair has to belong to a device, or sign-out and rotation
+        // have nothing to scope to. Checked before the credentials so a
+        // malformed client gets told what is wrong instead of "unauthorized".
+        $deviceId = $this->deviceId($request);
+
+        if ($deviceId === null) {
+            return ApiResponse::badRequest(__('haykal-api::auth.device_required'));
         }
 
         $user = $this->findUserByPhone($phone);
@@ -62,7 +74,7 @@ final class TokenController
         RateLimiter::clear($key);
         event(new Login($this->guard(), $user, false));
 
-        $pair = $tokens->pair($user, $this->deviceId($request));
+        $pair = $tokens->pair($user, $deviceId);
 
         return ApiResponse::ok(
             message: __('haykal-api::auth.login_successful'),

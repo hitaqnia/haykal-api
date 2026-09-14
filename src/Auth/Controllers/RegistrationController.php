@@ -39,6 +39,12 @@ final class RegistrationController
         CreateUserWithPasswordAction $createUser,
         IssueTokensAction $tokens,
     ): JsonResponse {
+        $deviceId = $this->deviceId($request);
+
+        if ($deviceId === null) {
+            return ApiResponse::badRequest(__('haykal-api::auth.device_required'));
+        }
+
         $phone = $this->normalizePhone($request->string('phone')->toString());
         $ticketKey = 'haykal-auth:registration:'.$request->string('registration_token')->toString();
         $store = Cache::store(config('haykal-auth.otp.store'));
@@ -73,7 +79,7 @@ final class RegistrationController
 
         event(new Registered($user));
 
-        $pair = $tokens->pair($user, $this->deviceId($request));
+        $pair = $tokens->pair($user, $deviceId);
 
         return ApiResponse::created(
             message: __('haykal-api::auth.registration_successful'),

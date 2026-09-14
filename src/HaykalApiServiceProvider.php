@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace HiTaqnia\Haykal\Api;
 
 use Dedoc\Scramble\Scramble;
+use HiTaqnia\Haykal\Api\Auth\Actions\Otp\FakeOtp;
 use HiTaqnia\Haykal\Api\Auth\Contracts\OtpSender;
 use HiTaqnia\Haykal\Api\Auth\Http\Middlewares\EnsureSessionToken;
 use HiTaqnia\Haykal\Api\Auth\Models\Token;
@@ -91,7 +92,7 @@ final class HaykalApiServiceProvider extends ServiceProvider
     private function registerOtpSender(): void
     {
         $this->app->bind(OtpSender::class, function (): OtpSender {
-            if (config('haykal-auth.otp.fake')) {
+            if (FakeOtp::enabled()) {
                 return new NullOtpSender;
             }
 

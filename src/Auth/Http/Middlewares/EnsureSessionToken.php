@@ -19,6 +19,11 @@ use Symfony\Component\HttpFoundation\Response;
  * phone possession alone, no password — would authenticate the whole API for
  * its lifetime.
  *
+ * Only the access token passes. A refresh token lives for 90 days and exists
+ * to mint access tokens, nothing else; letting it act as one everywhere turns
+ * every long-lived credential into a full session. `token/refresh` sits
+ * outside this middleware and checks for the refresh token itself.
+ *
  * Alias: `haykal.session.token`.
  */
 final class EnsureSessionToken
@@ -42,7 +47,7 @@ final class EnsureSessionToken
     {
         return $token instanceof Token && in_array(
             $token->name,
-            [TokenType::Access->getName(), TokenType::Refresh->getName()],
+            [TokenType::Access->getName()],
             strict: true,
         );
     }

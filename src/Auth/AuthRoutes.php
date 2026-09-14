@@ -70,12 +70,16 @@ final class AuthRoutes
     {
         $guard = 'auth:'.config('haykal-auth.guard', 'sanctum');
 
-        // Password reset sits outside the session-token group on purpose: it is
-        // the one endpoint the single-purpose OTP token is allowed to reach.
-        Route::middleware([$guard])->post('password/reset', [PasswordController::class, 'reset']);
+        // Two endpoints sit outside the session-token group on purpose, each
+        // because it is the sole destination of a non-session token: the OTP
+        // token may only reset a password, the refresh token may only rotate.
+        // Both controllers check the token type themselves.
+        Route::middleware([$guard])->group(function (): void {
+            Route::post('password/reset', [PasswordController::class, 'reset']);
+            Route::post('token/refresh', [TokenController::class, 'refresh']);
+        });
 
         Route::middleware([$guard, EnsureSessionToken::class])->group(function (): void {
-            Route::post('token/refresh', [TokenController::class, 'refresh']);
             Route::post('token/revoke', [TokenController::class, 'revoke']);
             Route::put('password/update', [PasswordController::class, 'update']);
         });

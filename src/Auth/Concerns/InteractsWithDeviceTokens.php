@@ -7,6 +7,7 @@ namespace HiTaqnia\Haykal\Api\Auth\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * Device scoping for token queries.
@@ -27,7 +28,10 @@ trait InteractsWithDeviceTokens
         $header = (string) config('haykal-auth.device.header', 'X-Device-Id');
         $value = $request->header($header);
 
-        return is_string($value) && $value !== '' ? $value : null;
+        // Anything that is not a ULID is treated as absent. `device_id` is a
+        // 26-character column, so an oversized or malformed header would
+        // otherwise reach the database and fail the insert there.
+        return is_string($value) && Str::isUlid($value) ? Str::upper($value) : null;
     }
 
     /**

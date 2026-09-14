@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace HiTaqnia\Haykal\Api\Auth\Controllers;
 
+use HiTaqnia\Haykal\Api\Auth\Actions\Otp\FakeOtp;
 use HiTaqnia\Haykal\Api\Auth\Actions\Otp\GenerateOtpAction;
 use HiTaqnia\Haykal\Api\Auth\Actions\Otp\VerifyOtpAction;
 use HiTaqnia\Haykal\Api\Auth\Actions\Token\IssueTokensAction;
@@ -67,8 +68,9 @@ final class OtpController
         $result = $generate->execute($phone, $purpose);
 
         if ($result->isFailure()) {
-            RateLimiter::clear($key);
-
+            // The attempt stays counted. Clearing it would let anyone with a
+            // gateway that reliably fails — or an attacker who can cause one —
+            // send unlimited messages to a number.
             return ApiResponse::businessError($result->getError());
         }
 
@@ -101,13 +103,13 @@ final class OtpController
         $result = $verify->execute($phone, $request->string('otp')->toString(), $purpose);
 
         if ($result->isFailure()) {
-            $error = $result->getError();
+            // One window of an hour, matching `max_verify_attempts_per_hour`.
+            // A shorter decay here would reset the counter between guesses:
+            // Laravel fixes the window from the first hit, so a 60-second
+            // decay turns "5 per hour" into 5 every minute.
+            RateLimiter::hit($key, 3600);
 
-            // An expired code costs more than a wrong digit: the user has to
-            // request a new one anyway, so there is nothing to retry quickly.
-            RateLimiter::hit($key, $error == AuthErrors::otpExpired() ? 300 : 60);
-
-            return ApiResponse::businessError($error);
+            return ApiResponse::businessError($result->getError());
         }
 
         RateLimiter::clear($key);
@@ -143,6 +145,6 @@ final class OtpController
 
     private function throttled(string $key, int $max): bool
     {
-        return RateLimiter::tooManyAttempts($key, $max) && ! config('haykal-auth.otp.fake');
+        return RateLimiter::tooManyAttempts($key, $max) && ! FakeOtp::enabled();
     }
 }
