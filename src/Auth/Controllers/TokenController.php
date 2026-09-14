@@ -80,7 +80,6 @@ final class TokenController
     {
         $user = $request->user();
         $current = $user->currentAccessToken();
-        $deviceId = $this->deviceId($request);
 
         // Check the token's name, not its abilities: access tokens carry `*`,
         // which satisfies `can('refresh')` all on its own.
@@ -88,21 +87,17 @@ final class TokenController
             return ApiResponse::unauthorized(__('haykal-api::auth.invalid_refresh_token'));
         }
 
-        if ($current->device_id !== $deviceId) {
-            return ApiResponse::unauthorized(__('haykal-api::auth.invalid_device'));
-        }
-
-        $pair = DB::transaction(function () use ($user, $current, $deviceId, $tokens) {
+        $pair = DB::transaction(function () use ($user, $current, $tokens) {
             // Shorten the superseded pair instead of deleting it, so requests
             // already in flight — and a duplicate parallel refresh — do not 401.
             $graceUntil = now()->addSeconds((int) config('haykal-auth.tokens.rotation_grace', 60));
 
-            $this->tokensForDevice($user, $deviceId)
+            $this->tokensForCurrentDevice($user, $current)
                 ->where('id', '<=', $current->getKey())
                 ->where('expires_at', '>', $graceUntil)
                 ->update(['expires_at' => $graceUntil]);
 
-            return $tokens->pair($user, $deviceId);
+            return $tokens->pair($user, $current->device_id);
         });
 
         return ApiResponse::ok(
@@ -120,7 +115,9 @@ final class TokenController
     {
         $user = $request->user();
 
-        $this->tokensForDevice($user, $this->deviceId($request))->delete();
+        // Scoped to the presented token's own device, so signing out works
+        // whether or not the client bothered to send the device header.
+        $this->tokensForCurrentDevice($user, $user->currentAccessToken())->delete();
 
         event(new Logout($this->guard(), $user));
 

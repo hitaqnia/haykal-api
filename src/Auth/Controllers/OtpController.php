@@ -45,7 +45,7 @@ final class OtpController
         $purpose = $request->purpose();
         $user = $this->findUserByPhone($phone);
 
-        if ($purpose === OtpPurpose::Register && $user !== null) {
+        if ($purpose === OtpPurpose::Register && $this->phoneIsTaken($phone)) {
             return ApiResponse::businessError(AuthErrors::phoneAlreadyRegistered());
         }
 

@@ -40,11 +40,7 @@ final class PasswordController
 
         // Sign every other device out, and drop any device-less OTP tokens,
         // but leave the pair this request came in on alone.
-        $user->tokens()
-            ->where(fn ($query) => $query
-                ->where('device_id', '!=', $current->device_id)
-                ->orWhereNull('device_id'))
-            ->delete();
+        $this->tokensForOtherDevices($user, $current)->delete();
 
         return ApiResponse::ok(__('haykal-api::auth.password_updated_successfully'));
     }

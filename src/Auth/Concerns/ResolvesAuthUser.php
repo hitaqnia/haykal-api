@@ -6,6 +6,7 @@ namespace HiTaqnia\Haykal\Api\Auth\Concerns;
 
 use HiTaqnia\Haykal\Core\Identity\ValueObjects\PhoneNumber;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Looks the authenticatable up by phone number.
@@ -32,6 +33,26 @@ trait ResolvesAuthUser
         $model = $this->userModel();
 
         return $model::query()->where('phone', $this->normalizePhone($phone))->first();
+    }
+
+    /**
+     * Whether the phone number is spoken for, soft-deleted rows included.
+     *
+     * `findUserByPhone` deliberately cannot see trashed users — they must not
+     * be able to authenticate. But the unique index still covers their row, so
+     * registration has to ask this instead, or it would pass every check and
+     * then die on the constraint.
+     */
+    protected function phoneIsTaken(string $phone): bool
+    {
+        $model = $this->userModel();
+        $query = $model::query()->where('phone', $this->normalizePhone($phone));
+
+        if (in_array(SoftDeletes::class, class_uses_recursive($model), true)) {
+            $query->withTrashed();
+        }
+
+        return $query->exists();
     }
 
     protected function normalizePhone(string $phone): string
