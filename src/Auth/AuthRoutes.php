@@ -10,6 +10,7 @@ use HiTaqnia\Haykal\Api\Auth\Controllers\PasswordController;
 use HiTaqnia\Haykal\Api\Auth\Controllers\RegistrationController;
 use HiTaqnia\Haykal\Api\Auth\Controllers\TokenController;
 use HiTaqnia\Haykal\Api\Auth\Http\Middlewares\EnsureSessionToken;
+use Illuminate\Routing\Route as RouteInstance;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -20,7 +21,10 @@ use Illuminate\Support\Facades\Route;
  *         ->middleware([SetLocaleFromHeaderMiddleware::class])
  *         ->group(fn () => AuthRoutes::register());
  *
- * Call the individual `register*` methods instead to take only part of the set.
+ * The individual `register*` methods exist so an application can take only
+ * part of the set, or throttle the parts differently — `accountCheck` in
+ * particular answers whether a phone number has an account, so it usually
+ * wants a tighter limit than sign-in does.
  */
 final class AuthRoutes
 {
@@ -32,11 +36,34 @@ final class AuthRoutes
 
     public static function registerPublic(): void
     {
-        Route::post('check', AccountCheckController::class);
+        self::registerAccountCheck();
+        self::registerOtp();
+        self::registerRegistration();
+        self::registerSignIn();
+    }
+
+    /**
+     * Returns the route so the application can pin its own throttle on it.
+     */
+    public static function registerAccountCheck(): RouteInstance
+    {
+        return Route::post('check', AccountCheckController::class);
+    }
+
+    public static function registerOtp(): void
+    {
         Route::post('otp/request', [OtpController::class, 'request']);
         Route::post('otp/verify', [OtpController::class, 'verify']);
-        Route::post('register', RegistrationController::class);
-        Route::post('token', [TokenController::class, 'create']);
+    }
+
+    public static function registerRegistration(): RouteInstance
+    {
+        return Route::post('register', RegistrationController::class);
+    }
+
+    public static function registerSignIn(): RouteInstance
+    {
+        return Route::post('token', [TokenController::class, 'create']);
     }
 
     public static function registerProtected(): void

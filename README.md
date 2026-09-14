@@ -413,6 +413,19 @@ Route::prefix('identity')
     ->group(fn () => AuthRoutes::register());
 ```
 
+`register()` is the whole set. `registerAccountCheck()`, `registerOtp()`, `registerRegistration()`, `registerSignIn()` and `registerProtected()` let an application take only part of it, or throttle the parts differently — `check` answers whether a phone number has an account, so it usually wants a tighter per-IP limit than sign-in:
+
+```php
+Route::middleware('throttle:identity')->group(function () {
+    AuthRoutes::registerAccountCheck()  // tighter: it is an enumeration oracle
+        ->middleware('throttle:identity-check');
+
+    AuthRoutes::registerOtp();
+    AuthRoutes::registerRegistration();
+    AuthRoutes::registerSignIn();
+});
+```
+
 Finally, schedule the token reaper:
 
 ```php
