@@ -113,7 +113,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | `fake` makes every code a repeated 1 (111111), skips delivery, and lifts
-    | the throttles. Never enable it outside local development.
+    | the throttles. It is ignored in production, whatever this is set to.
     |
     | `store` is a cache store name; null uses the default store.
     | `sender` is `otpiq`, `log`, `null`, or a class implementing OtpSender.

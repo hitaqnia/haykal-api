@@ -470,7 +470,7 @@ Codes live in the cache, keyed by phone and purpose, and are single use. They ar
 
 Throttling is per phone and purpose: three requests an hour, five verify attempts, with an expired code costing more than a wrong digit.
 
-Delivery goes through the `OtpSender` contract. `haykal-auth.otp.sender` picks `otpiq`, `log`, `null`, or any class you name; bind `OtpSender` yourself for anything else. `OTP_FAKE=true` makes every code `111111`, skips delivery and lifts the throttles — local development only.
+Delivery goes through the `OtpSender` contract. `haykal-auth.otp.sender` picks `otpiq`, `log`, `null`, or any class you name; bind `OtpSender` yourself for anything else. `OTP_FAKE=true` makes every code `111111`, skips delivery and lifts the throttles — it is ignored in production, so only non-production environments can turn it on.
 
 ### Panel login
 
